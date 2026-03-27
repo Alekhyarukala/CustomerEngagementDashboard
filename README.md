@@ -52,5 +52,5 @@ This project analyzes banking customer behavior to identify:
 
 1. Clone the repo:  
    ```bash
-   git clone <your-repo-link>
+   git clone <https://github.com/Alekhyarukala/CustomerEngagementDashboard.git>
    cd CustomerEngagementDashboard
