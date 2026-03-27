@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 # ----------------------
 # 1. Load Data
 # ----------------------
-data = pd.read_excel(r"C:\Users\alekh\Downloads\European_Bank.xlsx")  # Update path if needed
+data = pd.read_excel(r"European_Bank.xlsx")  # Update path if needed
 
 # ----------------------
 # 2. Add Engagement Profile
