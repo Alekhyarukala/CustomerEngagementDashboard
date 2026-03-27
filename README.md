@@ -54,3 +54,6 @@ This project analyzes banking customer behavior to identify:
    ```bash
    git clone <https://github.com/Alekhyarukala/CustomerEngagementDashboard.git>
    cd CustomerEngagementDashboard
+   ## 🚀 Live Demo
+
+🔗 https://customerengagementdashboardgit-etkb6lqiqxgqtzacmerd2o.streamlit.app/
