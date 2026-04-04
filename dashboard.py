@@ -2,30 +2,57 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
+st.set_page_config(page_title="Customer Retention Dashboard", layout="wide")
+
 # ----------------------
 # 1. Load Data
 # ----------------------
-data = pd.read_excel(r"European_Bank.xlsx")
+@st.cache_data
+def load_data():
+    return pd.read_excel("European_Bank.xlsx")
+
+data = load_data()
 
 # ----------------------
-# 2. Engagement Profile
+# 2. Feature Engineering
 # ----------------------
+
 def engagement_profile(row):
     if row['IsActiveMember'] == 1 and row['NumOfProducts'] > 1:
         return "Active Engaged"
-    elif row['IsActiveMember'] == 1 and row['NumOfProducts'] <= 1:
+    elif row['IsActiveMember'] == 1:
         return "Active Low-Product"
-    elif row['IsActiveMember'] == 0 and row['Balance'] > 50000:
+    elif row['Balance'] > 50000:
         return "Inactive High-Balance"
     else:
         return "Inactive Disengaged"
 
 data['EngagementProfile'] = data.apply(engagement_profile, axis=1)
 
+# Age Group
+data['AgeGroup'] = pd.cut(
+    data['Age'],
+    bins=[18, 30, 45, 60, 100],
+    labels=['18-30', '30-45', '45-60', '60+']
+)
+
+# Risk Score
+data['RiskScore'] = (
+    (1 - data['IsActiveMember']) * 0.4 +
+    (1 / (data['NumOfProducts'] + 1)) * 0.3 +
+    (data['Balance'] > 50000).astype(int) * 0.3
+)
+
+# Relationship Strength
+data['RelationshipStrength'] = (
+    data['IsActiveMember'] * 0.5 +
+    (data['NumOfProducts'] / 4) * 0.5
+)
+
 # ----------------------
 # 3. Sidebar Filters
 # ----------------------
-st.sidebar.title("Filters")
+st.sidebar.title("🔎 Filters")
 
 geography = st.sidebar.multiselect(
     "Geography", data['Geography'].unique(), default=data['Geography'].unique()
@@ -35,15 +62,19 @@ gender = st.sidebar.multiselect(
     "Gender", data['Gender'].unique(), default=data['Gender'].unique()
 )
 
+age_group = st.sidebar.multiselect(
+    "Age Group", data['AgeGroup'].unique(), default=data['AgeGroup'].unique()
+)
+
 balance_range = st.sidebar.slider(
-    "Balance Range",
+    "Balance",
     float(data['Balance'].min()),
     float(data['Balance'].max()),
     (float(data['Balance'].min()), float(data['Balance'].max()))
 )
 
 products_range = st.sidebar.slider(
-    "Number of Products",
+    "Products",
     int(data['NumOfProducts'].min()),
     int(data['NumOfProducts'].max()),
     (int(data['NumOfProducts'].min()), int(data['NumOfProducts'].max()))
@@ -53,214 +84,134 @@ products_range = st.sidebar.slider(
 filtered_data = data[
     (data['Geography'].isin(geography)) &
     (data['Gender'].isin(gender)) &
-    (data['Balance'] >= balance_range[0]) &
-    (data['Balance'] <= balance_range[1]) &
-    (data['NumOfProducts'] >= products_range[0]) &
-    (data['NumOfProducts'] <= products_range[1])
+    (data['AgeGroup'].isin(age_group)) &
+    (data['Balance'].between(balance_range[0], balance_range[1])) &
+    (data['NumOfProducts'].between(products_range[0], products_range[1]))
 ]
 
 # ----------------------
-# 4. KPIs
-# ----------------------
-active_churn = filtered_data[filtered_data['IsActiveMember']==1]['Exited'].mean()
-inactive_churn = filtered_data[filtered_data['IsActiveMember']==0]['Exited'].mean()
-
-engagement_retention_ratio = active_churn / inactive_churn if inactive_churn != 0 else 0
-
-product_depth_index = filtered_data['NumOfProducts'].mean()
-
-high_balance = filtered_data[filtered_data['Balance'] > 50000]
-
-high_balance_disengagement_rate = (
-    high_balance[high_balance['Exited']==1].shape[0] /
-    max(high_balance.shape[0], 1)
-)
-
-cc_yes = filtered_data[filtered_data['HasCrCard']==1]['Exited'].mean()
-cc_no = filtered_data[filtered_data['HasCrCard']==0]['Exited'].mean()
-
-credit_card_stickiness = cc_no - cc_yes
-
-# ----------------------
-# 5. Relationship Strength (NEW)
-# ----------------------
-filtered_data['RelationshipStrength'] = (
-    filtered_data['IsActiveMember'] * 0.5 +
-    (filtered_data['NumOfProducts'] / 4) * 0.5
-)
-
-relationship_strength_index = filtered_data['RelationshipStrength'].mean()
-
-# ----------------------
-# 6. Dashboard Title
+# 4. Title
 # ----------------------
 st.title("🏦 Customer Engagement & Retention Dashboard")
 
-st.markdown("### 📌 Executive Summary")
 st.markdown("""
-- Engagement and product usage drive customer retention more than financial strength  
-- Identifies high-risk, high-value customers  
-- Supports data-driven retention strategies  
+### 📌 Executive Summary
+- Engagement > Financial strength for retention  
+- Multi-product users are more loyal  
+- Identifies high-risk high-value customers  
 """)
 
+# ----------------------
+# 5. Tabs
+# ----------------------
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📊 Overview",
+    "👥 Engagement",
+    "📦 Products",
+    "🚨 Risk Analysis"
+])
+
+# ----------------------
+# TAB 1: OVERVIEW
+# ----------------------
+with tab1:
+    st.subheader("📊 KPI Overview")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    col1.metric("Churn Rate", round(filtered_data['Exited'].mean(), 2))
+    col2.metric("Avg Products", round(filtered_data['NumOfProducts'].mean(), 2))
+    col3.metric("Avg Risk Score", round(filtered_data['RiskScore'].mean(), 2))
+    col4.metric("Relationship Strength", round(filtered_data['RelationshipStrength'].mean(), 2))
+
+    st.subheader("📈 Balance Distribution")
+    fig = px.histogram(filtered_data, x="Balance")
+    st.plotly_chart(fig, use_container_width=True)
+
+# ----------------------
+# TAB 2: ENGAGEMENT
+# ----------------------
+with tab2:
+    st.subheader("📊 Engagement vs Churn")
+
+    fig1 = px.box(
+        filtered_data,
+        x="EngagementProfile",
+        y="Balance",
+        color="Exited"
+    )
+    st.plotly_chart(fig1, use_container_width=True)
+
+    st.subheader("📊 Age Group vs Churn")
+
+    age_churn = filtered_data.groupby('AgeGroup')['Exited'].mean().reset_index()
+
+    fig2 = px.bar(age_churn, x='AgeGroup', y='Exited', text='Exited')
+    fig2.update_traces(texttemplate='%{text:.2%}')
+    st.plotly_chart(fig2, use_container_width=True)
+
+# ----------------------
+# TAB 3: PRODUCTS
+# ----------------------
+with tab3:
+    st.subheader("📊 Products vs Churn")
+
+    prod_churn = filtered_data.groupby('NumOfProducts')['Exited'].mean().reset_index()
+
+    fig3 = px.bar(prod_churn, x='NumOfProducts', y='Exited', text='Exited')
+    fig3.update_traces(texttemplate='%{text:.2%}')
+    st.plotly_chart(fig3, use_container_width=True)
+
+    st.subheader("📊 Products vs Balance")
+
+    fig4 = px.scatter(
+        filtered_data,
+        x="NumOfProducts",
+        y="Balance",
+        color="Exited",
+        size="RiskScore"
+    )
+    st.plotly_chart(fig4, use_container_width=True)
+
+# ----------------------
+# TAB 4: RISK ANALYSIS
+# ----------------------
+with tab4:
+    st.subheader("🚨 High Risk Customers")
+
+    high_risk = filtered_data.sort_values(by="RiskScore", ascending=False).head(10)
+    st.dataframe(high_risk)
+
+    csv = high_risk.to_csv(index=False).encode('utf-8')
+
+    st.download_button(
+        "Download High Risk Customers",
+        csv,
+        "high_risk_customers.csv",
+        "text/csv"
+    )
+
+    st.subheader("📊 Risk Score Distribution")
+
+    fig5 = px.histogram(filtered_data, x="RiskScore")
+    st.plotly_chart(fig5, use_container_width=True)
+
+# ----------------------
+# 6. Final Recommendations
+# ----------------------
 st.markdown("---")
 
-# ----------------------
-# 7. KPI Display
-# ----------------------
-st.subheader("📊 Key Performance Indicators")
-
-col1, col2, col3, col4, col5 = st.columns(5)
-
-col1.metric("Engagement Retention Ratio", round(engagement_retention_ratio,2))
-col2.metric("Product Depth Index", round(product_depth_index,2))
-col3.metric("High-Balance Disengagement Rate", round(high_balance_disengagement_rate,2))
-col4.metric("Credit Card Stickiness", round(credit_card_stickiness,2))
-col5.metric("Relationship Strength Index", round(relationship_strength_index,2))
-
-st.markdown("---")
-
-# ----------------------
-# 8. Insights
-# ----------------------
-st.markdown("### 🔍 Insights")
-
-st.markdown(f"""
-- Active churn: **{round(active_churn,2)}**  
-- Inactive churn: **{round(inactive_churn,2)}**  
-
-👉 Inactive customers are **{round(engagement_retention_ratio,2)}x more likely to churn**
-""")
-
-st.markdown("---")
-
-# ----------------------
-# 9. Engagement vs Churn
-# ----------------------
-st.subheader("📊 Churn by Engagement Profile")
-
-engagement_churn = filtered_data.groupby('EngagementProfile')['Exited'].mean().reset_index()
-
-fig1 = px.bar(
-    engagement_churn,
-    x='EngagementProfile',
-    y='Exited',
-    text='Exited'
-)
-
-fig1.update_traces(texttemplate='%{text:.2%}')
-st.plotly_chart(fig1, use_container_width=True)
-
-st.markdown("---")
-
-# ----------------------
-# 10. Product vs Churn
-# ----------------------
-st.subheader("📊 Churn by Number of Products")
-
-products_churn = filtered_data.groupby('NumOfProducts')['Exited'].mean().reset_index()
-
-fig2 = px.bar(
-    products_churn,
-    x='NumOfProducts',
-    y='Exited',
-    text='Exited'
-)
-
-fig2.update_traces(texttemplate='%{text:.2%}')
-st.plotly_chart(fig2, use_container_width=True)
-
-st.markdown("---")
-
-# ----------------------
-# 11. Financial vs Engagement
-# ----------------------
-st.subheader("💰 Financial vs Engagement Analysis")
-
-filtered_data['EngagementScore'] = (
-    filtered_data['IsActiveMember'] + filtered_data['NumOfProducts']
-)
-
-fig_fin = px.scatter(
-    filtered_data,
-    x="Balance",
-    y="EngagementScore",
-    color="Exited"
-)
-
-st.plotly_chart(fig_fin, use_container_width=True)
-
-st.markdown("---")
-
-# ----------------------
-# 12. High-Value Disengaged Customers
-# ----------------------
-st.subheader("🚨 High-Value Disengaged Customers")
-
-high_value_disengaged = filtered_data[
-    (filtered_data['IsActiveMember'] == 0) &
-    (filtered_data['Balance'] > filtered_data['Balance'].quantile(0.75))
-]
-
-st.dataframe(high_value_disengaged)
-
-csv = high_value_disengaged.to_csv(index=False).encode('utf-8')
-
-st.download_button(
-    "Download CSV",
-    csv,
-    "high_value_disengaged.csv",
-    "text/csv"
-)
-
-st.markdown("---")
-
-# ----------------------
-# 13. Heatmap
-# ----------------------
-st.subheader("📊 Retention Heatmap")
-
-heatmap_data = filtered_data.pivot_table(
-    index='EngagementProfile',
-    columns='NumOfProducts',
-    values='Exited',
-    aggfunc='mean'
-)
-
-fig3 = px.imshow(
-    heatmap_data,
-    text_auto=True
-)
-
-st.plotly_chart(fig3, use_container_width=True)
-
-st.markdown("---")
-
-# ----------------------
-# 14. Customer Segmentation
-# ----------------------
-st.subheader("📊 Customer Segmentation")
-
-segment_counts = filtered_data['EngagementProfile'].value_counts().reset_index()
-segment_counts.columns = ['EngagementProfile', 'Count']
-
-fig4 = px.pie(segment_counts, names='EngagementProfile', values='Count')
-
-st.plotly_chart(fig4, use_container_width=True)
-
-# ----------------------
-# 15. Recommendations
-# ----------------------
 st.subheader("📌 Key Insights & Recommendations")
 
 st.markdown("""
-### Key Insights
-- Low product usage → highest churn risk  
-- Inactive high-balance customers → silent churn  
-- Product bundling improves retention  
+### 🔍 Key Insights
+- Low engagement → highest churn  
+- High-balance inactive customers → silent churn  
+- More products → higher retention  
 
-### Recommended Actions
-- 🎯 Target high-value inactive customers  
-- 📦 Promote cross-selling strategies  
-- 🎁 Build engagement-based loyalty programs  
+### 🚀 Recommendations
+- 🎯 Target high-risk customers  
+- 📦 Increase product cross-selling  
+- 🎁 Introduce loyalty programs  
+- 📊 Use behavioral analytics for decision making  
 """)
