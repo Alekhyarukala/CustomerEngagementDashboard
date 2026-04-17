@@ -21,9 +21,7 @@ This project analyzes banking customer behavior to identify:
 
 ## 🚀 Live Demo
 
-https://customerengagementdashboardgit-etkb6lqiqxgqtzacmerd2o.streamlit.app/
-
----
+https://customerengagementdashboard-c4k6u2gdjtzhy2mebus2kw.streamlit.app/
 
 ## 📊 Key Features / Dashboard Modules
 
